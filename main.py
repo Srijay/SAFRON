@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 #disable v2 behavious
 tf.compat.v1.disable_v2_behavior()
 
+# enable eager execution
+# tf.compat.v1.enable_eager_execution()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--input_dir", help="path to folder containing images")
