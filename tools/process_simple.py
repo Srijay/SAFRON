@@ -2,30 +2,25 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
-
 import argparse
 import os
 import tempfile
 import subprocess
-#import tensorflow as tf
 import numpy as np
+import tensorflow as tf
 import tfimage as im
 import threading
 import time
 import multiprocessing
 
-
-
 edge_pool = None
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--input_dir", required=True, help="path to folder containing images")
 parser.add_argument("--output_dir", required=True, help="output path")
 parser.add_argument("--operation", required=True, choices=["grayscale", "resize", "blank", "combine", "edges"])
 parser.add_argument("--workers", type=int, default=1, help="number of workers")
+parser.add_argument("--pad_images", type=int, default=0, help="set x if you want to pad images by x borders")
 # resize
 parser.add_argument("--pad", action="store_true", help="pad instead of crop for resize operation")
 parser.add_argument("--size", type=int, default=256, help="size to use for resize operation")
@@ -51,7 +46,7 @@ def resize(src):
             ow = (width - size) // 2
             dst = im.crop(image=dst, offset_height=oh, offset_width=ow, target_height=size, target_width=size)
 
-    assert(dst.shape[0] == dst.shape[1])
+    assert (dst.shape[0] == dst.shape[1])
 
     size, _, _ = dst.shape
     if size > a.size:
@@ -71,7 +66,7 @@ def blank(src):
     offset = int(image_size / 2 - size / 2)
 
     dst = src
-    dst[offset:offset + size,offset:offset + size,:] = np.ones([size, size, 3])
+    dst[offset:offset + size, offset:offset + size, :] = np.ones([size, size, 3])
     return dst
 
 
@@ -92,7 +87,14 @@ def combine(src, src_path):
     # make sure that dimensions are correct
     height, width, _ = src.shape
     if height != sibling.shape[0] or width != sibling.shape[1]:
-        raise Exception("differing sizes")
+        if (a.pad_images):
+            size = max(height + 2 * a.pad_images, width + 2 * a.pad_images)
+            # pad to correct ratio
+            oh = (size - height) // 2
+            ow = (size - width) // 2
+            src = im.pad(image=src, offset_height=oh, offset_width=ow, target_height=size, target_width=size)
+        else:
+            raise Exception("differing sizes")
 
     # convert both images to RGB if necessary
     if src.shape[2] == 1:
@@ -103,10 +105,10 @@ def combine(src, src_path):
 
     # remove alpha channel
     if src.shape[2] == 4:
-        src = src[:,:,:3]
+        src = src[:, :, :3]
 
     if sibling.shape[2] == 4:
-        sibling = sibling[:,:,:3]
+        sibling = sibling[:, :, :3]
 
     return np.concatenate([src, sibling], axis=1)
 
@@ -116,21 +118,24 @@ def grayscale(src):
 
 
 net = None
+
+
 def run_caffe(src):
     # lazy load caffe and create net
     global net
     if net is None:
         # don't require caffe unless we are doing edge detection
-        os.environ["GLOG_minloglevel"] = "2" # disable logging from caffe
+        os.environ["GLOG_minloglevel"] = "2"  # disable logging from caffe
         import caffe
         # using this requires using the docker image or assembling a bunch of dependencies
         # and then changing these hardcoded paths
-        net = caffe.Net("/opt/caffe/examples/hed/deploy.prototxt", "/opt/caffe/hed_pretrained_bsds.caffemodel", caffe.TEST)
+        net = caffe.Net("/opt/caffe/examples/hed/deploy.prototxt", "/opt/caffe/hed_pretrained_bsds.caffemodel",
+                        caffe.TEST)
 
     net.blobs["data"].reshape(1, *src.shape)
     net.blobs["data"].data[...] = src
     net.forward()
-    return net.blobs["sigmoid-fuse"].data[0][0,:,:]
+    return net.blobs["sigmoid-fuse"].data[0][0, :, :]
 
 
 def edges(src):
@@ -138,11 +143,11 @@ def edges(src):
     # and https://github.com/phillipi/pix2pix/blob/master/scripts/edges/PostprocessHED.m
     import scipy.io
     src = src * 255
-    border = 128 # put a padding around images since edge detection seems to detect edge of image
-    src = src[:,:,:3] # remove alpha channel if present
-    src = np.pad(src, ((border, border), (border, border), (0,0)), "reflect")
-    src = src[:,:,::-1]
-    src -= np.array((104.00698793,116.66876762,122.67891434))
+    border = 128  # put a padding around images since edge detection seems to detect edge of image
+    src = src[:, :, :3]  # remove alpha channel if present
+    src = np.pad(src, ((border, border), (border, border), (0, 0)), "reflect")
+    src = src[:, :, ::-1]
+    src -= np.array((104.00698793, 116.66876762, 122.67891434))
     src = src.transpose((2, 0, 1))
 
     # [height, width, channels] => [batch, channel, height, width]
@@ -174,7 +179,7 @@ imwrite(E, output_path);
             input_path="'%s'" % mat_file.name,
             output_path="'%s'" % png_file.name,
             image_width=256,
-            threshold=25.0/255.0,
+            threshold=25.0 / 255.0,
             small_edge=5,
         )
 
@@ -217,6 +222,7 @@ start = None
 num_complete = 0
 total = 0
 
+
 def complete():
     global num_complete, rate, last_complete
 
@@ -230,7 +236,8 @@ def complete():
         else:
             remaining = 0
 
-        print("%d/%d complete  %0.2f images/sec  %dm%ds elapsed  %dm%ds remaining" % (num_complete, total, rate, elapsed // 60, elapsed % 60, remaining // 60, remaining % 60))
+        print("%d/%d complete  %0.2f images/sec  %dm%ds elapsed  %dm%ds remaining" % (
+        num_complete, total, rate, elapsed // 60, elapsed % 60, remaining // 60, remaining % 60))
 
         last_complete = now
 
@@ -268,43 +275,15 @@ def main():
         global edge_pool
         edge_pool = multiprocessing.Pool(a.workers)
 
-    if a.workers == 1:
-        with tf.Session() as sess:
-            for src_path, dst_path in zip(src_paths, dst_paths):
-                process(src_path, dst_path)
-                complete()
-    else:
-        queue = tf.train.input_producer(zip(src_paths, dst_paths), shuffle=False, num_epochs=1)
-        dequeue_op = queue.dequeue()
-
-        def worker(coord):
-            with sess.as_default():
-                while not coord.should_stop():
-                    try:
-                        src_path, dst_path = sess.run(dequeue_op)
-                    except tf.errors.OutOfRangeError:
-                        coord.request_stop()
-                        break
-
-                    process(src_path, dst_path)
-                    complete()
-
-        # init epoch counter for the queue
-        local_init_op = tf.local_variables_initializer()
-        with tf.Session() as sess:
-            sess.run(local_init_op)
-
-            coord = tf.train.Coordinator()
-            threads = tf.train.start_queue_runners(coord=coord)
-            for i in range(a.workers):
-                t = threading.Thread(target=worker, args=(coord,))
-                t.start()
-                threads.append(t)
-
+    with tf.Session() as sess:
+        for src_path, dst_path in zip(src_paths, dst_paths):
             try:
-                coord.join(threads)
-            except KeyboardInterrupt:
-                coord.request_stop()
-                coord.join(threads)
+                process(src_path, dst_path)
+            except:
+                print(src_path)
+                print(dst_path)
+                print("Invalid :",src_path)
+            complete()
+
 
 main()
