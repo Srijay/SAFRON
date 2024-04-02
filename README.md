@@ -1,73 +1,54 @@
 # SAFRON: Stitching Across the Frontier Network for Generating Colorectal Cancer Histology Images
 
-Official implementation of https://www.sciencedirect.com/science/article/abs/pii/S1361841521003820
+![SAFRON-GAN (2)](https://github.com/Srijay/SAFRON/assets/6882352/6593d1b9-9048-4929-9912-e33e11373233)
 
-![image](https://ars.els-cdn.com/content/image/1-s2.0-S1361841521003820-ga1.jpg)
 
-This repository contains code for SPADESegResNet, the model developed for semantic segmentation for breast cancer whole slide images. Please follow the instructions given below to setup the environment and execute the code.
+This repository contains the official implementation of https://www.sciencedirect.com/science/article/abs/pii/S1361841521003820. Please follow the instructions given below to setup the environment and execute the code.
+
 
 # Set Up Environment
 
 Clone the repository, and execute the following commands to set up the environment.
 
 ```
-cd SPADESegResNet
+cd SAFRON
 
 # create base conda environment
 conda env create -f environment.yml
 
 # activate environment
-conda activate spadesegresnet
+conda activate safron
 
-# install PyTorch with pip
-pip install torch==2.0.0+cu117 torchvision==0.15.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
 ```
 
 # Download data and extract tiles
 
-The breast cancer whole slide images, along with their semantic segmentation maps, can be downloaded from the link. Please place the downloaded images in the 'data/images' folder and the annotations or segmentation maps inside the 'data/labels' folder. The first step is to group labels of similar tissue regions together. For this purpose, download the gtruth_codes.tsv file from the data link, located inside the 'meta' folder. Put it into the 'data' folder and execute the following command.
+The colon cancer whole slide images, along with their tissue component masks, can be downloaded from the datasets like [CRAG](https://github.com/XiaoyuZHK/CRAG-Dataset_Aug_ToCOCO) and [DigestPath](https://paperswithcode.com/dataset/digestpath). After downloading images, run the patch extracter code from folder named CRAG. 
 
 ```
-python ./data_scripts/construct_groupings.py
+python ImagesCropper.py
 ```
 
-The script will create a folder named 'grouped_labels' inside the 'data' folder. To split the dataset into training and testing sets, please run the following script:
+The script will create folders named 'images' and 'masks'. To create image-mask pairs, run the following command: 
 
 ```
-python ./data_scripts/split_dataset.py
-```
-
-It will create the training and testing data inside the 'data/train/' and 'data/test/' folders respectively. Now, please run the following script to extract tiles of size 768×768 pixels:
+python tools/process.py --input_dir ./masks --b_dir ./images --operation combine --output_dir ./paired
 
 ```
-python ./data_scripts/extract_tiles.py
-```
-
-The script will create tiles and put inside the ./data/train/splits/cropped/768 when applied on the training data. Similarly it can be applied on testing data and create testing images inside ./data/test/splits/cropped/768.
 
 
 # Model Training
 
-Now, we are set to train the model. Please update the training parameters inside the config.txt file, put mode='train' and run the following command:
+Now, we are set to train the model. Please update the training parameters inside the main script, put mode='train' and run the following command:
 
 ```
 python main.py 
 ```
 
-All three models discussed in the paper—the proposed SPADESegResNet model, along with the baseline models UNet and UNet++ — have their scripts located in the 'model' folder. Please set the model you would like to train in the config.txt. The trained models are not uploaded, as Github restricts file uploads exceeding 25MB. Kindly reach out to me if you need access to the trained models.
+# User Interface
 
-# Testing and Evaluation
-
-To test the model, update the parameters inside config.txt file, put restore_model = 1, and execute the main file:
+To try out user interface for the SAFRON model, please update the relevant paths and execute the command:
 
 ```
-python main.py 
-```
-
-Please set mode='test_patch' if you want to compute semantic segmentation maps on tiles of the same size used for training. To generate segmentation maps of a larger size, please keep mode='test_wsi'. After executing the script, it will compute and store semantic segmentation maps in the 'pred' directory inside the output folder path given in config.txt. The script will also print the overall accuracy and store the list of Dice scores and AUC-ROC values inside the output folder with names <model_name>_dice.json and <model_name>_auc.json, respectively.
-
-Now, to compute mean Dice score, mean AUC-ROC, their standard deviations, boxplots and p-values for statistical significant, please execute the following script by updating suitable paths of json files created in the last step.
-
-```
-python compute_statistics.py 
+python interface.py 
 ```
