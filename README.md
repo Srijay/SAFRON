@@ -56,6 +56,10 @@ To try out user interface for the SAFRON model, please update the relevant paths
 python interface.py 
 ```
 
+# Demo
+
+You can try out generating some colon tissue images [here](https://huggingface.co/spaces/srijaydeshpande/SAFRON)
+
 ### Cite this repository
 
 If you find SAFRON useful or use it in your research, please consider citing our paper:
